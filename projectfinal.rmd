@@ -1,0 +1,205 @@
+---
+title: "Practical Machine Learning Final Project Report"
+author: "Sam Rickman"
+date: "27/03/2019"
+output:
+  md_document:
+    variant: markdown_github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## Background  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).   
+
+## Data Sources  
+
+The training data for this project is available here:  
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)  
+The test data is available here:  
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)  
+
+The data for this project comes from this original source: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har). If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.  
+
+## Intended Results  
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.  
+
+## 1. Packages used 
+
+The following packages were used. Please note that I set the seed for reproducibility.
+
+```{r loadpackages, message=FALSE}
+library(caret)
+library(randomForest)
+library(gbm)
+set.seed(99281)
+```
+
+## 2. Getting and splitting data
+
+The data was downloaded and split as below:
+
+```{r gettingdata}
+## Download training and test data
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = 'training.csv')
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = 'test.csv')
+
+training = read.csv("training.csv")
+test = read.csv("test.csv")
+
+## Split the data
+
+inTrain = createDataPartition(y=training$classe, p=0.6, list = FALSE)
+subTraining = training[inTrain,]
+subTest = training[-inTrain,]
+
+
+```
+
+## Cleaning data
+
+The following cleaning was done:
+
+1. Remove rows with mostly NAs.
+2. Remove near zero variables.
+3. Remove categorical data (other than outcome) and irrelevant numeric data.
+
+```{r cleaningdata}
+## Getting and cleaning data
+
+# Step 1 - clearing variables
+
+## Remove columns with more than 50% NA
+subTraining = subTraining[, -which(colMeans(is.na(subTraining)) > 0.5)]
+
+## Remove columns with near zero variance variables
+
+nzv_cols = nearZeroVar(subTraining)
+subTraining = subTraining[,-nzv_cols]
+
+## Remove ID column, username and timestamps as it will confuse the ML algorithm and adds no information
+## for this analysis
+
+subTraining = subTraining[,-(1:5)]
+
+## Now remove same columns from training and test data
+
+cleanNames = names(subTraining)
+subTest = subTest[cleanNames]
+test = test[cleanNames[-54]] # already doesn't have last variable as that's the outcome
+
+```
+
+## OK let's do some machine learning
+
+First let's try boosting.
+
+```{r boosting, eval=FALSE}
+## Boosting
+
+boostingModel = train(y = subTraining[,54], x = subTraining[,-54], method = 'gbm', verbose= FALSE)
+
+boostingPredictions = predict(boostingModel, newdata=subTest)
+
+confusionMatrix(subTest$classe, boostingPredictions)
+
+```
+
+I have saved the output from my terminal rather than evaluating it as part of the RMD as it kept crashing when I tried to knit. The output was:
+```{r output, eval=FALSE}
+Confusion Matrix and Statistics
+
+Reference
+Prediction    A    B    C    D    E
+A 2227    5    0    0    0
+B   10 1488   19    0    1
+C    0    7 1355    6    0
+D    3    5   22 1256    0
+E    0    9    3   12 1418
+
+Overall Statistics
+
+Accuracy : 0.987           
+95% CI : (0.9842, 0.9894)
+No Information Rate : 0.2855          
+P-Value [Acc > NIR] : < 2.2e-16       
+
+Kappa : 0.9836          
+Mcnemars Test P-Value : NA              
+
+Statistics by Class:
+  
+  Class: A Class: B Class: C Class: D Class: E
+Sensitivity            0.9942   0.9828   0.9685   0.9859   0.9993
+Specificity            0.9991   0.9953   0.9980   0.9954   0.9963
+Pos Pred Value         0.9978   0.9802   0.9905   0.9767   0.9834
+Neg Pred Value         0.9977   0.9959   0.9932   0.9973   0.9998
+Prevalence             0.2855   0.1930   0.1783   0.1624   0.1809
+Detection Rate         0.2838   0.1897   0.1727   0.1601   0.1807
+Detection Prevalence   0.2845   0.1935   0.1744   0.1639   0.1838
+Balanced Accuracy      0.9967   0.9890   0.9833   0.9907   0.9978
+```
+
+
+```{r rf, eval=FALSE}
+## Now random forest
+
+randomForestModel = train(y = subTraining[,54], x = subTraining[,-54], method = 'rf', prox = TRUE)
+
+rfPredictions = predict(randomForest, newdata=subTest)
+
+confusionMatrix(subTest$classe, rfPredictions)
+
+```
+
+```{r randomforestoutput, eval=FALSE}
+Confusion Matrix and Statistics
+
+Reference
+Prediction    A    B    C    D    E
+A 2231    0    0    0    1
+B    1 1514    2    1    0
+C    0    2 1365    1    0
+D    0    0    9 1277    0
+E    0    0    0    3 1439
+
+Overall Statistics
+
+Accuracy : 0.9975          
+95% CI : (0.9961, 0.9984)
+No Information Rate : 0.2845          
+P-Value [Acc > NIR] : < 2.2e-16       
+
+Kappa : 0.9968          
+Mcnemars Test P-Value : NA              
+
+Statistics by Class:
+
+Class: A Class: B Class: C Class: D Class: E
+Sensitivity            0.9996   0.9987   0.9920   0.9961   0.9993
+Specificity            0.9998   0.9994   0.9995   0.9986   0.9995
+Pos Pred Value         0.9996   0.9974   0.9978   0.9930   0.9979
+Neg Pred Value         0.9998   0.9997   0.9983   0.9992   0.9998
+Prevalence             0.2845   0.1932   0.1754   0.1634   0.1835
+Detection Rate         0.2843   0.1930   0.1740   0.1628   0.1834
+Detection Prevalence   0.2845   0.1935   0.1744   0.1639   0.1838
+Balanced Accuracy      0.9997   0.9990   0.9958   0.9974   0.9994
+```
+
+We can see that both boosting and random forest are extremely accurate but random forest slightly more so, so we'll apply that to the test data.
+
+```{r finaloutput, eval=FALSE}
+testPredictions = predict(randomForestModel, test)
+```
+
+This yields:
+
+```{r finalfinal, eval=FALSE}
+> testPredictions
+ [1] B A B A A E D B A A B C B A E E A B B B
+Levels: A B C D E
+```
